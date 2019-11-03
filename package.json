@@ -1,14 +1,14 @@
 {
-  "name": "cryptoforknote-util",
-  "version": "6.0.0",
-  "main": "cryptoforknote-util",
+  "name": "cryptonote-lib",
+  "version": "1.0.0",
+  "main": "cryptonote-lib",
   "author": {
-    "name": "LucasJones",
-    "email": "lucasjonesdev@hotmail.co.uk"
+    "name": "Myriade",
+    "email": "dev@myriade.io"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/MoneroOcean/node-cryptoforknote-util.git"
+    "url": "https://github.com/myriadeinc/cryptonote-lib"
   },
   "dependencies": {
     "bindings": "*",
