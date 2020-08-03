@@ -2,6 +2,7 @@
     "targets": [
         {
             "target_name": "cryptonotelib",
+            "type": "static_library"
             "sources": [
                 "src/main.cc",
                 "src/cryptonote_core/cryptonote_format_utils.cpp",
@@ -24,6 +25,7 @@
                 "libraries": [
                     "-lboost_system",
                     "-lboost_date_time",
+                    "-L<(module_root_dir)/../Library/binaries/linux/Release"
                 ]
             },
             "cflags_c":  [
