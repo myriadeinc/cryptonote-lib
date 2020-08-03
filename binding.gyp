@@ -21,6 +21,9 @@
                 "/usr/local/opt/boost/include",
                 "<!(node -e \"require('nan')\")",
             ],
+            "libraries": [
+                "-L<(module_root_dir)/../Library/binaries/linux/Release"
+            ],
             "link_settings": {
                 "libraries": [
                     "-lboost_system",
