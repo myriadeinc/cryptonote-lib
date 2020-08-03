@@ -2,7 +2,7 @@
     "targets": [
         {
             "target_name": "cryptonotelib",
-            "type": "static_library"
+            "type": "static_library",
             "sources": [
                 "src/main.cc",
                 "src/cryptonote_core/cryptonote_format_utils.cpp",
