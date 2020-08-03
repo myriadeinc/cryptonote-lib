@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2019, The Monero Project
+// Copyright (c) 2019, Haven Protocol
 // 
 // All rights reserved.
 // 
@@ -30,17 +30,38 @@
 
 #pragma once
 
-#include <cstdint>
-#include <string>
+#include <vector>
 
-namespace tools
+#include "serialization.h"
+#include "debug_archive.h"
+#include "offshore/pricing_record.h"
+
+/*
+// read
+template <template <bool> class Archive>
+bool do_serialize(Archive<false> &ar, offshore::pricing_record &pr)
 {
-  namespace base58
-  {
-    std::string encode(const std::string& data);
-    bool decode(const std::string& enc, std::string& data);
-
-    std::string encode_addr(uint64_t tag, const std::string& data);
-    bool decode_addr(const std::string &addr, uint64_t& tag, std::string& data);
+  // very basic sanity check
+  if (ar.remaining_bytes() < sizeof(offshore::pricing_record)) {
+    ar.stream().setstate(std::ios::failbit);
+    return false;
   }
+  ar.serialize_blob(&pr, sizeof(offshore::pricing_record), "");
+  if (!ar.stream().good())
+    return false;
+  return true;
 }
+// write
+template <template <bool> class Archive>
+bool do_serialize(Archive<true> &ar, offshore::pricing_record &pr)
+{
+  ar.begin_string();
+  ar.serialize_blob(&pr, sizeof(offshore::pricing_record), "");
+  if (!ar.stream().good())
+    return false;
+  ar.end_string();
+  return true;
+}
+*/
+
+BLOB_SERIALIZER(offshore::pricing_record);

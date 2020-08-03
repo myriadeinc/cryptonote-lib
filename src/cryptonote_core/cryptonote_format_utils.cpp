@@ -87,8 +87,13 @@ namespace cryptonote
     uint64_t amount_out = 0;
     BOOST_FOREACH(auto& in, tx.vin)
     {
-      CHECK_AND_ASSERT_MES(in.type() == typeid(txin_to_key), 0, "unexpected type id in transaction");
-      amount_in += boost::get<txin_to_key>(in).amount;
+      if (tx.blob_type != BLOB_TYPE_CRYPTONOTE_XHV) {
+        CHECK_AND_ASSERT_MES(in.type() == typeid(txin_to_key), 0, "unexpected type id in transaction");
+        amount_in += boost::get<txin_to_key>(in).amount;
+      } else {
+        CHECK_AND_ASSERT_MES(in.type() == typeid(txin_to_key) || in.type() == typeid(txin_offshore) || in.type() == typeid(txin_onshore), 0, "unexpected type id in transaction");
+        amount_in += in.type() == typeid(txin_to_key) ? boost::get<txin_to_key>(in).amount : in.type() == typeid(txin_onshore) ? boost::get<txin_onshore>(in).amount : boost::get<txin_offshore>(in).amount;
+      }
     }
     BOOST_FOREACH(auto& o, tx.vout)
       amount_out += o.amount;
@@ -235,10 +240,15 @@ namespace cryptonote
   {
     BOOST_FOREACH(const auto& in, tx.vin)
     {
-      CHECK_AND_ASSERT_MES(in.type() == typeid(txin_to_key), false, "wrong variant type: "
-        << in.type().name() << ", expected " << typeid(txin_to_key).name()
-        << ", in transaction id=" << get_transaction_hash(tx));
-
+      if (tx.blob_type != BLOB_TYPE_CRYPTONOTE_XHV) {
+        CHECK_AND_ASSERT_MES(in.type() == typeid(txin_to_key), false, "wrong variant type: "
+          << in.type().name() << ", expected " << typeid(txin_to_key).name()
+          << ", in transaction id=" << get_transaction_hash(tx));
+      } else {
+        CHECK_AND_ASSERT_MES(in.type() == typeid(txin_to_key) || in.type() == typeid(txin_offshore) || in.type() == typeid(txin_onshore), false, "wrong variant type: "
+          << in.type().name() << ", expected " << typeid(txin_to_key).name() << "or " << typeid(txin_onshore).name()
+          << ", in transaction id=" << get_transaction_hash(tx));
+      }
     }
     return true;
   }
@@ -247,14 +257,29 @@ namespace cryptonote
   {
     BOOST_FOREACH(const tx_out& out, tx.vout)
     {
-      CHECK_AND_ASSERT_MES(out.target.type() == typeid(txout_to_key), false, "wrong variant type: "
-        << out.target.type().name() << ", expected " << typeid(txout_to_key).name()
-        << ", in transaction id=" << get_transaction_hash(tx));
+      if (tx.blob_type != BLOB_TYPE_CRYPTONOTE_XHV) {
+        CHECK_AND_ASSERT_MES(out.target.type() == typeid(txout_to_key), false, "wrong variant type: "
+          << out.target.type().name() << ", expected " << typeid(txout_to_key).name()
+          << ", in transaction id=" << get_transaction_hash(tx));
+      } else {
+        CHECK_AND_ASSERT_MES(out.target.type() == typeid(txout_to_key) || out.target.type() == typeid(txout_offshore), false, "wrong variant type: "
+          << out.target.type().name() << ", expected " << typeid(txout_to_key).name()
+	  << "or " << typeid(txout_offshore).name()
+	  << ", in transaction id=" << get_transaction_hash(tx));
+      }
 
-      CHECK_AND_NO_ASSERT_MES(0 < out.amount, false, "zero amount ouput in transaction id=" << get_transaction_hash(tx));
+      if (tx.version == 1)
+      {
+        CHECK_AND_NO_ASSERT_MES(0 < out.amount, false, "zero amount ouput in transaction id=" << get_transaction_hash(tx));
+      }
 
-      if(!check_key(boost::get<txout_to_key>(out.target).key))
-        return false;
+      if (tx.blob_type != BLOB_TYPE_CRYPTONOTE_XHV) {
+        if(!check_key(boost::get<txout_to_key>(out.target).key))
+          return false;
+      } else {
+        if(!check_key(out.target.type() == typeid(txout_to_key) ? boost::get<txout_to_key>(out.target).key : boost::get<txout_offshore>(out.target).key))
+          return false;
+      }
     }
     return true;
   }
@@ -269,10 +294,22 @@ namespace cryptonote
     uint64_t money = 0;
     BOOST_FOREACH(const auto& in, tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(in, const txin_to_key, tokey_in, false);
-      if(money > tokey_in.amount + money)
-        return false;
-      money += tokey_in.amount;
+      if (tx.blob_type == BLOB_TYPE_CRYPTONOTE_XHV && tx.vin[0].type() == typeid(txin_offshore)) {
+        CHECKED_GET_SPECIFIC_VARIANT(in, const txin_offshore, tokey_in, false);
+        if(money > tokey_in.amount + money)
+          return false;
+        money += tokey_in.amount;
+      } else if (tx.blob_type == BLOB_TYPE_CRYPTONOTE_XHV && tx.vin[0].type() == typeid(txin_onshore)) {
+        CHECKED_GET_SPECIFIC_VARIANT(in, const txin_onshore, tokey_in, false);
+        if(money > tokey_in.amount + money)
+          return false;
+        money += tokey_in.amount;
+      } else {
+        CHECKED_GET_SPECIFIC_VARIANT(in, const txin_to_key, tokey_in, false);
+        if(money > tokey_in.amount + money)
+          return false;
+        money += tokey_in.amount;
+      }
     }
     return true;
   }
@@ -406,7 +443,16 @@ namespace cryptonote
       binary_archive<true> ba(ss);
       const size_t inputs = t.vin.size();
       const size_t outputs = t.vout.size();
-      const size_t mixin = t.vin.empty() ? 0 : t.vin[0].type() == typeid(txin_to_key) ? boost::get<txin_to_key>(t.vin[0]).key_offsets.size() - 1 : 0;
+      size_t mixin;
+      if (t.blob_type != BLOB_TYPE_CRYPTONOTE_XHV) {
+        mixin = t.vin.empty() ? 0 : t.vin[0].type() == typeid(txin_to_key) ? boost::get<txin_to_key>(t.vin[0]).key_offsets.size() - 1 : 0;
+      } else {
+        mixin = t.vin.empty() ? 0 :
+	t.vin[0].type() == typeid(txin_to_key) ? boost::get<txin_to_key>(t.vin[0]).key_offsets.size() - 1 :
+	t.vin[0].type() == typeid(txin_offshore) ? boost::get<txin_offshore>(t.vin[0]).key_offsets.size() - 1 :
+	t.vin[0].type() == typeid(txin_onshore) ? boost::get<txin_onshore>(t.vin[0]).key_offsets.size() - 1 :
+	0;
+      }
       bool r = tt.rct_signatures.p.serialize_rctsig_prunable(ba, t.rct_signatures.type, inputs, outputs, mixin);
       CHECK_AND_ASSERT_MES(r, false, "Failed to serialize rct signatures prunable");
       cryptonote::get_blob_hash(ss.str(), hashes[2]);
@@ -429,12 +475,23 @@ namespace cryptonote
   //---------------------------------------------------------------
   bool get_block_hashing_blob(const block& b, blobdata& blob)
   {
-    blob = t_serializable_object_to_blob(static_cast<const block_header&>(b));
+    if (b.blob_type == BLOB_TYPE_CRYPTONOTE_XTNC || b.blob_type == BLOB_TYPE_CRYPTONOTE_CUCKOO || b.blob_type == BLOB_TYPE_CRYPTONOTE_TUBE) {
+      blob = t_serializable_object_to_blob(b.major_version);
+      blob.append(reinterpret_cast<const char*>(&b.minor_version), sizeof(b.minor_version));
+      blob.append(reinterpret_cast<const char*>(&b.timestamp), sizeof(b.timestamp));
+      blob.append(reinterpret_cast<const char*>(&b.prev_id), sizeof(b.prev_id));
+    }
+    else {
+      blob = t_serializable_object_to_blob(static_cast<const block_header&>(b));
+    }
     crypto::hash tree_root_hash = get_tx_tree_hash(b);
     blob.append(reinterpret_cast<const char*>(&tree_root_hash), sizeof(tree_root_hash));
     blob.append(tools::get_varint_data(b.tx_hashes.size()+1));
     if (b.blob_type == BLOB_TYPE_CRYPTONOTE3) {
       blob.append(reinterpret_cast<const char*>(&b.uncle), sizeof(b.uncle));
+    }
+    if (b.blob_type == BLOB_TYPE_CRYPTONOTE_CUCKOO || b.blob_type == BLOB_TYPE_CRYPTONOTE_TUBE) {
+      blob.append(reinterpret_cast<const char*>(&b.nonce8), sizeof(b.nonce8));
     }
     return true;
   }
@@ -480,15 +537,6 @@ namespace cryptonote
     return get_object_hash(blob, res);
   }
   //---------------------------------------------------------------
-  bool get_block_longhash(const block& b, crypto::hash& res, uint64_t height)
-  {
-    blobdata bd;
-    if(!get_block_hashing_blob(b, bd))
-      return false;
-    crypto::cn_slow_hash(bd.data(), bd.size(), res);
-    return true;
-  }
-  //---------------------------------------------------------------
   std::vector<uint64_t> relative_output_offsets_to_absolute(const std::vector<uint64_t>& off)
   {
     std::vector<uint64_t> res = off;
@@ -507,13 +555,6 @@ namespace cryptonote
       res[i] -= res[i-1];
 
     return res;
-  }
-  //---------------------------------------------------------------
-  crypto::hash get_block_longhash(const block& b, uint64_t height)
-  {
-    crypto::hash p = null_hash;
-    get_block_longhash(b, p, height);
-    return p;
   }
   //---------------------------------------------------------------
   bool get_bytecoin_block_longhash(const block& b, crypto::hash& res)
